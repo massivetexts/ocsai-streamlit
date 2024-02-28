@@ -6,10 +6,10 @@ import textwrap
 
 # Streamlit page configuration
 st.title('Bulk Scoring with Ocsai')
-st.markdown("This app allows you to score a large dataset using the OCS API. See details at <https://openscoring.du.edu/llm>.")
+st.markdown("This app allows you to score a large dataset using the OCS API. "
+            "See details at <https://openscoring.du.edu/scoringllm>.")
 
-# PROGRESS BAR
-
+model_options = ["ocsai-davinci2", "ocsai-babbage2", "ocsai-chatgpt"]
 
 def score_file(uploaded_file):
     if uploaded_file is not None:
@@ -60,7 +60,7 @@ with st.sidebar:
     with st.form("scoring_form"):
         # PARAMS
         ocs_url = 'https://openscoring.du.edu/llm'
-        model = st.selectbox("Choose model", ["ocsai-davinci2", "ocsai-babbage2", "ocsai-chatgpt"], index=0)
+        model = st.selectbox("Choose model", model_options, index=0)
         upload_format = st.selectbox("Upload format (if auto, extension is used)", ["csv", "excel", "auto"], index=2)
         name_of_prompt_column = st.text_input('Name of prompt column', value='prompt')
         name_of_response_column = st.text_input('Name of response column', value='response')
