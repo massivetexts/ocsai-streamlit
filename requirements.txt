@@ -3,4 +3,3 @@ pandas
 streamlit
 numpy
 requests
-textwrap
