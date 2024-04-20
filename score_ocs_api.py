@@ -31,11 +31,12 @@ langref = {
     }
 tasks = ['uses', 'completion', 'consequences', 'instances', 'metaphors']
 
-ocs_url = 'http://127.0.0.1:5000/llm'  # 'https://openscoring.du.edu/llm'
+ocs_url = 'https://openscoring.du.edu/llm'
 default_model = "ocsai-1.5"
 default_lang = "eng"
 default_task = "uses"
 
+verify=False # avoid SSL errors for short term.
 
 def lang_formatter(x):
     return langref[x] if x in langref else x
@@ -89,7 +90,7 @@ def score_file(uploaded_file):
                 params['task'] = task
             if change_question_template:
                 params['question_in_input'] = True
-            result = post(ocs_url, data=params, timeout=120)
+            result = post(ocs_url, data=params, verify=verify, timeout=120)
             if result.status_code != 200:
                 st.error(f"Error: {result.status_code}")
                 st.error(f"Error: {result.content}")
