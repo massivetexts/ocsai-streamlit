@@ -51,7 +51,7 @@ default_model = "ocsai-1.5"
 default_lang = "eng"
 default_task = "uses"
 
-verify = False  # avoid SSL errors for short term.
+verify = True  # avoid SSL errors for short term.
 
 
 def lang_formatter(x):
