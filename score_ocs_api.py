@@ -11,11 +11,11 @@ st.markdown(
     "See details at <https://openscoring.du.edu/scoringllm>."
 )
 
-model_options = ["ocsai-davinci2", "ocsai-babbage2", "ocsai-chatgpt", "ocsai-1.5"]
+model_options = ["ocsai-davinci3", "ocsai-chatgpt2", "ocsai-1.5"]
 
-legacy_models = ["ocsai-davinci2", "ocsai-babbage2"]
-chat_models = ["ocsai-chatgpt", "ocsai-1.5"]
-ocsai1_models = ["ocsai-davinci2", "ocsai-babbage2", "ocsai-chatgpt"]
+legacy_models = ["ocsai-davinci3"]
+chat_models = ["ocsai-chatgpt2", "ocsai-1.5"]
+ocsai1_models = ["ocsai-davinci3", "ocsai-chatgpt2"]
 ocsai2_models = ["ocsai-1.5"]
 ocsai2_langs = [
     "ara",
@@ -51,8 +51,7 @@ default_model = "ocsai-1.5"
 default_lang = "eng"
 default_task = "uses"
 
-verify = True  # avoid SSL errors for short term.
-
+verify = True
 
 def lang_formatter(x):
     return langref[x] if x in langref else x
@@ -81,7 +80,7 @@ def score_file(uploaded_file):
 
         # SCORING
         chunk_size = 20
-        if model in ["ocsai-davinci2", "ocsai-babbage2"]:
+        if model in ["ocsai-davinci3"]:
             chunk_size = 100
 
         all_results = []
