@@ -126,9 +126,9 @@ langref = {
 }
 
 # Streamlit page configuration
-st.title("Bulk Scoring with Ocsai")
+st.title("Bulk Creativity Scoring with Ocsai")
 st.markdown(
-    "This app allows you to score a large dataset using the OCS API. "
+    "This app allows you to score a large dataset of creativity test responsesusing the OCS API. "
     "See details at <https://openscoring.du.edu/scoringllm>."
 )
 
