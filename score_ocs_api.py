@@ -5,6 +5,26 @@ from requests import post
 import textwrap
 import yaml
 import os
+import random
+import hashlib
+import time
+
+# Generate a random icon hash
+def get_random_icon_hash():
+    # Use current timestamp and a random number to create a unique string
+    random_seed = f"{time.time()}{random.random()}"
+    # Create a hash from this string
+    hash_object = hashlib.md5(random_seed.encode())
+    # Return the first 8 characters of the hash
+    return hash_object.hexdigest()[:8]
+
+# Set page configuration
+st.set_page_config(
+    page_title="Bulk Scoring with Ocsai",
+    page_icon=f"https://etc.porg.dev/icon/{get_random_icon_hash()}",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
 # Load config file
 def load_config():
@@ -105,7 +125,7 @@ elif not ocs_url.endswith('/llm'):
     ocs_url += '/llm'
 
 # Debug the URL
-st.sidebar.write(f"API URL: {ocs_url}")
+st.sidebar.write(f"API URL: [{ocs_url}]({ocs_url.replace('/llm', '/docs')})")
 
 # Find recommended model from config
 default_model = next((model['name'] for model in config.get('llmmodels', []) 
@@ -341,7 +361,7 @@ else:
     st.markdown(
         textwrap.dedent(
             """## Instructions
-1. Choose your settings
+1. Choose your settings. `ocsai-1.6` supported multiple languages and multiple tasks, while `ocsai-4o` is good for English Alternate Uses scoring.
 2. Specify what the name of the prompt and response columns are in your dataset.
 3. Upload your file and press the button to score it.
         """
