@@ -31,7 +31,6 @@ def get_icon_image():
         else:
             return None
     except Exception:
-        raise
         return None
 
 # Set page configuration
