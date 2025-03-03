@@ -36,7 +36,7 @@ def get_icon_image():
 
 # Set page configuration
 st.set_page_config(
-    page_title="Bulk Scoring with Ocsai",
+    page_title="Ocsai | Bulk Scoring",
     page_icon=get_icon_image(), # THIS IS DUMB. THE DEPLOYED APP DOESN"T LOAD DIRECTLY FROM URL - BUT DOING THIS ADDS BLOCKING OVERHEAD TO PAGE LOAD
     layout="wide",
     initial_sidebar_state="expanded"
