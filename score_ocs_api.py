@@ -21,7 +21,7 @@ def get_random_icon_hash():
 # Set page configuration
 st.set_page_config(
     page_title="Bulk Scoring with Ocsai",
-    page_icon=f"https://etc.porg.dev/icon/{get_random_icon_hash()}",
+    page_icon=f"http://etc.porg.dev/icon/{get_random_icon_hash()}?rounded=80&ocs=true&single=true",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -357,6 +357,34 @@ merged = score_file(uploaded_file)
 if merged is not None:
     st.write("Your Scored Data. Press the button to download the file.")
     st.dataframe(merged)
+    
+    # Create download button with filename based on the uploaded file
+    if uploaded_file is not None:
+        original_filename = uploaded_file.name
+        filename_without_ext, file_extension = os.path.splitext(original_filename)
+        download_filename = f"{filename_without_ext}_scored{file_extension}"
+        
+        # Prepare the file for download based on the extension
+        if file_extension.lower() == '.csv':
+            csv_data = merged.to_csv(index=False)
+            st.download_button(
+                label="Download Scored Data",
+                data=csv_data,
+                file_name=download_filename,
+                mime="text/csv"
+            )
+        elif file_extension.lower() in ['.xlsx', '.xls']:
+            # For Excel files, we need to use a BytesIO object
+            import io
+            buffer = io.BytesIO()
+            merged.to_excel(buffer, index=False)
+            buffer.seek(0)
+            st.download_button(
+                label="Download Scored Data",
+                data=buffer,
+                file_name=download_filename,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
 else:
     st.markdown(
         textwrap.dedent(
