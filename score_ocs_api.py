@@ -8,6 +8,9 @@ import os
 import random
 import hashlib
 import time
+import requests
+from PIL import Image
+from io import BytesIO
 
 # Generate a random icon hash
 def get_random_icon_hash():
@@ -18,10 +21,23 @@ def get_random_icon_hash():
     # Return the first 8 characters of the hash
     return hash_object.hexdigest()[:8]
 
+# Load icon image from URL
+def get_icon_image():
+    icon_url = f"http://etc.porg.dev/icon/{get_random_icon_hash()}?rounded=80&ocs=true&single=true"
+    try:
+        response = requests.get(icon_url)
+        if response.status_code == 200:
+            return response.content.decode('utf-8').strip()
+        else:
+            return None
+    except Exception:
+        raise
+        return None
+
 # Set page configuration
 st.set_page_config(
     page_title="Bulk Scoring with Ocsai",
-    page_icon=f"http://etc.porg.dev/icon/{get_random_icon_hash()}?rounded=80&ocs=true&single=true",
+    page_icon=get_icon_image(), # THIS IS DUMB. THE DEPLOYED APP DOESN"T LOAD DIRECTLY FROM URL - BUT DOING THIS ADDS BLOCKING OVERHEAD TO PAGE LOAD
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -245,6 +261,7 @@ def score_file(uploaded_file):
 
 
 with st.sidebar:
+    icon = get_icon_image()
     model = st.selectbox(
         "Choose model",
         model_options,
