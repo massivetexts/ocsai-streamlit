@@ -183,7 +183,7 @@ def score_file(uploaded_file):
             df = pd.read_excel(uploaded_file)
 
         # SCORING
-        chunk_size = 20
+        chunk_size = 5
         if model in ["ocsai-davinci3"]:
             chunk_size = 100
 
@@ -196,7 +196,7 @@ def score_file(uploaded_file):
             my_bar.progress(
                 percent_complete, text=f"Scoring in progress ({i+1} of {n_chunks})"
             )
-            chunk = df.iloc[i:i_end]
+            chunk = df.iloc[i_start:i_end]
             inputs = chunk[[name_of_prompt_column, name_of_response_column]]
             api_input = inputs.to_csv(None, header=False, index=False).strip()
             params = dict(input=api_input, model=model)
@@ -211,20 +211,68 @@ def score_file(uploaded_file):
             
             headers = {}
             if api_key is not None:
-                headers["X-FORWARDED-FOR"] = "streamlit"
-            else:
                 headers["X-API-KEY"] = api_key
-            result = post(ocs_url, data=params, headers=headers, verify=verify, timeout=120)
-            if result.status_code != 200:
-                st.error(f"Error code: {result.status_code}")
-                st.error(f"Error: {result.text}")
-                if result.status_code == 401:
-                    st.error(
-                        "At usage limit. You may need to provide an API key to access this model, or wait a bit."
-                    )
-                return
             else:
-                all_results += result.json()["scores"]
+                headers["X-FORWARDED-FOR"] = "streamlit"
+            
+            max_retries = 2
+            retry_count = 0
+            success = False
+            
+            while retry_count < max_retries and not success:
+                try:
+                    result = post(ocs_url, data=params, headers=headers, verify=verify, timeout=120)
+                    if result.status_code == 200:
+                        all_results += result.json()["scores"]
+                        success = True
+                    else:
+                        retry_count += 1
+                        if retry_count < max_retries:
+                            # Exponential backoff: wait longer with each retry
+                            wait_time = 2 ** retry_count
+                            st.toast(f"Request failed (attempt {retry_count}/{max_retries}). Retrying in {wait_time} seconds...", icon="⚠️")
+                            time.sleep(wait_time)
+                        else:
+                            st.error(f"Error code: {result.status_code}")
+                            st.error(f"Error: {result.text}")
+                            if result.status_code == 401:
+                                st.error(
+                                    "At usage limit. You may need to provide an API key to access this model, or wait a bit."
+                                )
+                            
+                            # Create empty results with NA scores for this chunk
+                            for _, row in chunk.iterrows():
+                                empty_result = {
+                                    "prompt" if not change_question_template else "question": row[name_of_prompt_column],
+                                    "response": row[name_of_response_column],
+                                    "score": np.nan,
+                                    "confidence": np.nan,
+                                    "flags": None,
+                                    "language": language,
+                                    "type": task
+                                }
+                                all_results.append(empty_result)
+                except Exception as e:
+                    retry_count += 1
+                    if retry_count < max_retries:
+                        wait_time = 2 ** retry_count
+                        st.warning(f"Request failed with exception: {str(e)}. Retrying in {wait_time} seconds...")
+                        time.sleep(wait_time)
+                    else:
+                        st.error(f"Failed after {max_retries} attempts: {str(e)}")
+                        
+                        # Create empty results with NA scores for this chunk
+                        for _, row in chunk.iterrows():
+                            empty_result = {
+                                "prompt" if not change_question_template else "question": row[name_of_prompt_column],
+                                "response": row[name_of_response_column],
+                                "score": np.nan,
+                                "confidence": np.nan,
+                                "flags": None,
+                                "language": language,
+                                "type": task
+                            }
+                            all_results.append(empty_result)
 
         my_bar.empty()
 
@@ -269,6 +317,12 @@ with st.sidebar:
             model_options.index(default_model) if default_model in model_options else 0
         ),
         format_func=model_formatter,
+    )
+
+    input_method = st.radio(
+        "Input method",
+        ["Upload file", "Paste data"],
+        help="Choose whether to upload a file or paste CSV data directly"
     )
 
     language: str | None = None
@@ -316,10 +370,26 @@ with st.sidebar:
             "Use full question instead of short prompt",
             value=False,
             help=(
-                "If you want to use the full question from your dataset "
-                "instead of a short prompt, select this option. This is useful "
-                "when your dataset already contains complete questions rather "
-                "than just prompt keywords."
+                textwrap.dedent('''
+                If you want to use the full question from your dataset "
+                instead of a short prompt, select this option. This is useful 
+                when your dataset already contains complete questions rather 
+                than just prompt keywords.
+
+                 For example:
+
+                - Short prompt: "brick"
+                - Full question: "What is a surprising use for a brick?"
+
+                The short prompt is all you need most of the time, especially when it
+                is clear what the task is (e.g. for the alternate uses task, instances,
+                or metaphors).
+
+                For some tasks, you may want to write out the full question, especially
+                when defining new tasks that the model doesn't know, or for tasks where
+                there's no sensible 'short version' (e.g. a complete the sentence task).
+
+                Not all models support full questions.''')
             ),
         )
         
@@ -341,6 +411,7 @@ with st.sidebar:
         help=("If `auto`, the file extension is used to determine the " "format."),
         options=["csv", "excel", "auto"],
         index=2,
+        disabled=input_method == "Paste data"
     )
     name_of_prompt_column = "prompt"
     name_of_response_column = "response"
@@ -353,6 +424,7 @@ with st.sidebar:
             "If the main data is called something different than "
             "prompt/response, select this option."
         ),
+        disabled=input_method == "Paste data"
     )
     if custom_names:
         name_of_prompt_column = st.text_input("Name of prompt column", value="prompt")
@@ -361,21 +433,59 @@ with st.sidebar:
         )
 
     with st.form("scoring_form"):
-        uploaded_file = st.file_uploader(
-            "Choose a file to upload", type=["csv", "xlsx"]
-        )
+        if input_method == "Upload file":
+            uploaded_file = st.file_uploader(
+                "Choose a file to upload", type=["csv", "xlsx"]
+            )
+            pasted_data = None
+        else:
+            uploaded_file = None
+            pasted_data = st.text_area(
+                "Paste CSV data",
+                height=200,
+                help="Format: prompt,response (one pair per line)"
+            )
 
-        st.form_submit_button("Score my file")
+        st.form_submit_button("Score my data")
 
 my_bar = st.progress(0, text="Scoring in progress")
 my_bar.empty()
-merged = score_file(uploaded_file)
+
+# Process pasted data if that method was chosen
+if input_method == "Paste data" and pasted_data:
+    import io
+    # Convert pasted text to a file-like object
+    csv_data = io.StringIO(pasted_data)
+    # Read as CSV with no header
+    df = pd.read_csv(csv_data, header=None, names=["prompt", "response"])
+    # Set the column names to match what the scoring function expects
+    df = df.rename(columns={"prompt": name_of_prompt_column, "response": name_of_response_column})
+    
+    # Create a temporary file-like object to pass to score_file
+    temp_csv = io.StringIO()
+    df.to_csv(temp_csv, index=False)
+    temp_csv.seek(0)
+    
+    # Create a proper file-like object that implements the required interface
+    class MockFile:
+        def __init__(self, content, filename):
+            self.content = content
+            self.name = filename
+            self._buffer = io.StringIO(content)
+            
+        def read(self, size=-1):
+            return self._buffer.read(size)
+            
+    mock_file = MockFile(temp_csv.getvalue(), "pasted_data.csv")
+    merged = score_file(mock_file)
+else:
+    merged = score_file(uploaded_file)
 
 if merged is not None:
     st.write("Your Scored Data. Press the button to download the file.")
     st.dataframe(merged)
     
-    # Create download button with filename based on the uploaded file
+    # Create download button with filename based on the uploaded file or pasted data
     if uploaded_file is not None:
         original_filename = uploaded_file.name
         filename_without_ext, file_extension = os.path.splitext(original_filename)
@@ -402,13 +512,35 @@ if merged is not None:
                 file_name=download_filename,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
+    else:
+        # Handle pasted data case - always treat as CSV
+        csv_data = merged.to_csv(index=False)
+        st.download_button(
+            label="Download Scored Data",
+            data=csv_data,
+            file_name="pasted_data_scored.csv",
+            mime="text/csv"
+        )
 else:
     st.markdown(
-        textwrap.dedent(
-            """## Instructions
-1. Choose your settings. `ocsai-1.6` supported multiple languages and multiple tasks, while `ocsai-4o` is good for English Alternate Uses scoring.
-2. Specify what the name of the prompt and response columns are in your dataset.
-3. Upload your file and press the button to score it.
+        textwrap.dedent("""
+            ## Instructions
+
+            *Settings are in the sidebar. If you're on a small screen, you need to expand it.*
+
+            1. Choose your settings.
+                - `ocsai-1.6` supported multiple languages and multiple tasks, while `ocsai-4o` is good for English Alternate Uses scoring.
+                - If uploading a file, specify what the name of the prompt and response columns are in your dataset.
+                - If pasting data, ensure it's in CSV format with prompt in column 1 and response in column 2.
+            2. Upload/paste your data and press the button to score it.
+                        
+            ## Citing OCS
+            
+            To cite the work which introduced automated scoring of divergent thinking with large language models:
+
+            > "Organisciak, P., Acar, S., Dumas, D., & Berthiaume, K. (2023). Beyond semantic distance: Automated scoring of divergent thinking greatly improves with large language models. *Thinking Skills and Creativity*, 49, 101356. <https://doi.org/10.1016/j.tsc.2023.101356>"
+                        
+            A [pre-print version](http://dx.doi.org/10.13140/RG.2.2.32393.31840) is also available.
         """
         ).strip()
     )
