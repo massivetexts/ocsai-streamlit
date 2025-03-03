@@ -1,0 +1,43 @@
+llmmodels:
+- name: ocsai-1.6
+  description: Update to the multi-lingual, multi-task 1.5 model, trained on GPT 4o
+    instead of 3.5.
+  short-description: Multi-lingual, multi-task, gpt-4o-mini base
+  format: ocsai2
+  style: chat
+  languages:
+  - ara
+  - chi
+  - dut
+  - eng
+  - fre
+  - ger
+  - heb
+  - ita
+  - pol
+  - rus
+  - spa
+  - CUSTOM
+  tasks:
+  - uses
+  - completion
+  - consequences
+  - instances
+  - metaphors
+  - CUSTOM
+  debug: true
+  deprecated: false
+  recommended: true
+  production: true
+- name: ocsai-chatgpt2
+  description: GPT-3.5-size chat-based model, trained with more data and supporting
+    multiple tasks. Scoring is slower, with slightly better performance than ocsai-davinci.
+  format: classic_multi
+  style: chat
+  tasks:
+  - uses
+  - completion
+  - consequences
+  - instances
+  debug: true
+  production: true

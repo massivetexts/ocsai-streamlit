@@ -3,33 +3,79 @@ import streamlit as st
 import numpy as np
 from requests import post
 import textwrap
+import yaml
+import os
 
-# Streamlit page configuration
-st.title("Bulk Scoring with Ocsai")
-st.markdown(
-    "This app allows you to score a large dataset using the OCS API. "
-    "See details at <https://openscoring.du.edu/scoringllm>."
-)
+# Load config file
+def load_config():
+    config_path = './config.yaml'
+    try:
+        with open(config_path, 'r') as file:
+            return yaml.safe_load(file)
+    except Exception as e:
+        st.error(f"Error loading config file: {e}")
+        return None
 
-model_options = ["ocsai-davinci3", "ocsai-chatgpt2", "ocsai-1.5"]
+config = load_config()
 
-legacy_models = ["ocsai-davinci3"]
-chat_models = ["ocsai-chatgpt2", "ocsai-1.5"]
-ocsai1_models = ["ocsai-davinci3", "ocsai-chatgpt2"]
-ocsai2_models = ["ocsai-1.5"]
-ocsai2_langs = [
-    "ara",
-    "chi",
-    "dut",
-    "eng",
-    "fre",
-    "ger",
-    "heb",
-    "ita",
-    "pol",
-    "rus",
-    "spa",
-]
+# Extract model information from config
+def get_model_info():
+    if not config or 'llmmodels' not in config:
+        return [], [], [], [], [], []
+    
+    llm_models = config['llmmodels']
+    
+    model_options = [model['name'] for model in llm_models if model.get('production', False)]
+    
+    legacy_models = []
+    chat_models = []
+    ocsai1_models = []
+    ocsai2_models = []
+    ocsai2_langs = set()
+    tasks_set = set()
+    
+    for model in llm_models:
+        if not model.get('production', False):
+            continue
+            
+        if model.get('style') == 'completion':
+            legacy_models.append(model['name'])
+        if model.get('style') == 'chat':
+            chat_models.append(model['name'])
+            
+        if model.get('format') == 'classic' or model.get('format') == 'classic_multi':
+            ocsai1_models.append(model['name'])
+        elif model.get('format') == 'ocsai2':
+            ocsai2_models.append(model['name'])
+            
+            # Collect languages and tasks for ocsai2 models
+            if 'languages' in model:
+                for lang in model['languages']:
+                    if lang != 'CUSTOM':
+                        ocsai2_langs.add(lang)
+            
+            if 'tasks' in model:
+                for task in model['tasks']:
+                    if task != 'CUSTOM':
+                        tasks_set.add(task)
+    return (
+        model_options, 
+        legacy_models, 
+        chat_models, 
+        ocsai1_models, 
+        ocsai2_models, 
+        sorted(list(ocsai2_langs)),
+        sorted(list(tasks_set))
+    )
+
+# Get model information
+model_options, legacy_models, chat_models, ocsai1_models, ocsai2_models, ocsai2_langs, tasks = get_model_info()
+
+# Fallback to hardcoded values if config loading fails
+if not model_options:
+    raise ValueError("No models found in config")
+
+# Language reference dictionary
 langref = {
     "eng": "English",
     "spa": "Spanish",
@@ -43,11 +89,28 @@ langref = {
     "chi": "Chinese",
     "heb": "Hebrew",
 }
-tasks = ["uses", "completion", "consequences", "instances", "metaphors"]
 
-ocs_url = "https://openscoring.du.edu/llm"
-#ocs_url = 'http://127.0.0.1:5000/llm'
-default_model = "ocsai-1.5"
+# Streamlit page configuration
+st.title("Bulk Scoring with Ocsai")
+st.markdown(
+    "This app allows you to score a large dataset using the OCS API. "
+    "See details at <https://openscoring.du.edu/scoringllm>."
+)
+
+# Get API URL from config or use default
+ocs_url = config.get('site', {}).get('api_url', 'https://openscoring.du.edu/')
+if ocs_url.endswith('/'):
+    ocs_url = ocs_url.rstrip('/') + '/llm'
+elif not ocs_url.endswith('/llm'):
+    ocs_url += '/llm'
+
+# Debug the URL
+st.sidebar.write(f"API URL: {ocs_url}")
+
+# Find recommended model from config
+default_model = next((model['name'] for model in config.get('llmmodels', []) 
+                     if model.get('recommended', False) and model.get('production', True)), 
+                     "ocsai-1.6")
 default_lang = "eng"
 default_task = "uses"
 
@@ -58,6 +121,11 @@ def lang_formatter(x):
 
 
 def model_formatter(x):
+    for model in config.get('llmmodels', []):
+        if model['name'] == x:
+            return f"{x} ({model.get('short-description', model.get('description', ''))})"
+    
+    # Fallback to old style if model not found in config
     style = "English, AUT" if x in ocsai1_models else "multi-lang, multi-task"
     return f"{x} ({style})"
 
@@ -93,15 +161,7 @@ def score_file(uploaded_file):
                 percent_complete, text=f"Scoring in progress ({i+1} of {n_chunks})"
             )
             chunk = df.iloc[i:i_end]
-            if q_template is not None:
-                chunk["question"] = chunk["prompt"].apply(
-                    lambda x: q_template.format(prompt=x)
-                )
-                inputs = chunk[
-                    [name_of_prompt_column, "question", name_of_response_column]
-                ]
-            else:
-                inputs = chunk[[name_of_prompt_column, name_of_response_column]]
+            inputs = chunk[[name_of_prompt_column, name_of_response_column]]
             api_input = inputs.to_csv(None, header=False, index=False).strip()
             params = dict(input=api_input, model=model)
 
@@ -111,6 +171,7 @@ def score_file(uploaded_file):
                 params["task"] = task
             if change_question_template:
                 params["question_in_input"] = True
+                params["prompt_in_input"] = False
             
             headers = {}
             if api_key is not None:
@@ -132,17 +193,35 @@ def score_file(uploaded_file):
         my_bar.empty()
 
         # MERGE RESULTS BACK INTO ORIGINAL DATA
+        # Determine the column names in the API response
+        api_prompt_col = "question" if change_question_template else "prompt"
+        api_response_col = "response"  # This doesn't change
+        
         col_mappings = {
-            "prompt": name_of_prompt_column,
-            "response": name_of_response_column,
+            api_prompt_col: name_of_prompt_column,
+            api_response_col: name_of_response_column,
         }
+        
         scored = pd.DataFrame(all_results).rename(columns=col_mappings)
-        merged = df.merge(
-            scored.drop_duplicates(["prompt", "response"]),
-            on=["prompt", "response"],
-            how="left",
-        ).drop(columns=["confidence", "flags", "language", "type"])
-        return merged
+        
+        # Check if the expected columns exist in the scored dataframe
+        merge_cols = [name_of_prompt_column, name_of_response_column]
+        
+        # Make sure all required columns exist before merging
+        if all(col in scored.columns for col in merge_cols):
+            merged = df.merge(
+                scored.drop_duplicates(merge_cols),
+                on=merge_cols,
+                how="left",
+            )
+            # Drop any API-specific columns that aren't needed
+            cols_to_drop = ["confidence", "flags", "language", "type"]
+            merged = merged.drop(columns=[col for col in cols_to_drop if col in merged.columns])
+            return merged
+        else:
+            st.error(f"API response doesn't contain expected columns. Available columns: {scored.columns.tolist()}")
+            st.write("API response sample:", scored.head())
+            return None
 
 
 with st.sidebar:
@@ -197,18 +276,18 @@ with st.sidebar:
             task = st.text_input("Custom task: type out a description of the goal")
 
         change_question_template = st.checkbox(
-            "Change question template",
+            "Use full question instead of short prompt",
             value=False,
             help=(
-                "If you want to specify a custom question "
-                "template, select this option. This is useful"
-                " if a short 'prompt' is insufficient for the"
-                " model to understand what is being scored -"
-                " especially if you're scoring a task that the"
-                " model wasn't trained on"
+                "If you want to use the full question from your dataset "
+                "instead of a short prompt, select this option. This is useful "
+                "when your dataset already contains complete questions rather "
+                "than just prompt keywords."
             ),
         )
-        if change_question_template:
+        
+        # Only show question template if not using full questions from dataset
+        if not change_question_template:
             template_defaults = {
                 "uses": "What is a surprising use for a {prompt}?",
                 "completion": "Complete the sentence: {prompt}",
@@ -219,19 +298,6 @@ with st.sidebar:
             default_template = ""
             if task in template_defaults:
                 default_template = template_defaults[task]
-
-            q_template = st.text_input(
-                "Question template",
-                value=default_template,
-                help=(
-                    "This is the question template that will be used to "
-                    "guide the model. It *needs* `{prompt}` included, where "
-                    "the the prompt is inserted. For example, \n- "
-                    "\n- ".join(template_defaults.values())
-                ),
-            )
-            if "{prompt}" not in q_template:
-                st.error("Your question template must include `{prompt}`")
 
     upload_format = st.selectbox(
         "Upload format",
@@ -276,7 +342,6 @@ else:
         textwrap.dedent(
             """## Instructions
 1. Choose your settings
-    - `ocsai-chatgpt` is the slowest, though slightly more accurate than `ocsai-davinci2`.
 2. Specify what the name of the prompt and response columns are in your dataset.
 3. Upload your file and press the button to score it.
         """
