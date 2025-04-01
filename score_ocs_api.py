@@ -215,6 +215,8 @@ def score_file(uploaded_file):
                 if change_question_template:
                     params["question_in_input"] = True
                     params["prompt_in_input"] = False
+                if not model in ocsai2_models and logprob_scoring:
+                    params["logprob_scoring"] = True
                 
                 headers = {}
                 if api_key is not None:
@@ -306,7 +308,7 @@ def score_file(uploaded_file):
                     how="left",
                 )
                 # Drop any API-specific columns that aren't needed
-                cols_to_drop = ["confidence", "flags", "language", "type"]
+                cols_to_drop = ["flags", "language", "type"]
                 merged = merged.drop(columns=[col for col in cols_to_drop if col in merged.columns])
                 return merged
             else:
@@ -344,6 +346,7 @@ with st.sidebar:
     task: str | None = None
     change_question_template: bool = False
     q_template: str | None = None
+    logprob_scoring: bool = False
 
     if model in ocsai2_models:
         language = st.selectbox(
@@ -420,6 +423,17 @@ with st.sidebar:
             default_template = ""
             if task in template_defaults:
                 default_template = template_defaults[task]
+
+    else:
+        # Add logprob_scoring option for non-ocsai2 models
+        logprob_scoring = st.checkbox(
+            "Use weighted probabilistic scoring",
+            value=False,
+            help=(
+                "When enabled, the top 5 score options are included in a composite, "
+                "weighted by their probability."
+            ),
+        )
 
     upload_format = st.selectbox(
         "Upload format",
