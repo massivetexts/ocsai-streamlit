@@ -149,7 +149,7 @@ default_model = next((model['name'] for model in config.get('llmmodels', [])
 default_lang = "eng"
 default_task = "uses"
 
-verify = True
+verify = False
 
 def lang_formatter(x):
     return langref[x] if x in langref else x
